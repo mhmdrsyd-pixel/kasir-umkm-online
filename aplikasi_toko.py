@@ -283,3 +283,30 @@ elif menu == "📈 Laporan Lengkap":
         st.dataframe(df_trx[['tanggal', 'kasir_name', 'nama_barang', 'jumlah', 'harga_normal', 'diskon_per_item', 'total_akhir']], use_container_width=True)
     else:
         st.write("Belum ada transaksi.")
+        # --- FITUR TAMBAHAN: KONVERSI KE GOOGLE SHEETS ---
+st.sidebar.markdown("---")
+if st.sidebar.button("🚀 Kirim Laporan ke Google Sheets"):
+    try:
+        # 1. Ambil data dari Database Lokal Anda (SQLite)
+        # Asumsi nama tabel Anda adalah 'penjualan'
+        import sqlite3
+        conn_local = sqlite3.connect('toko_umkm.db')
+        df_lokal = pd.read_sql_query("SELECT * FROM penjualan", conn_local)
+        conn_local.close()
+
+        if not df_lokal.empty:
+            # 2. Hubungkan ke Google Sheets melalui Secrets
+            from streamlit_gsheets import GSheetsConnection
+            conn_gsheets = st.connection("gsheets", type=GSheetsConnection)
+            
+            # 3. Kirim/Update data ke tab bernama 'Sheet1'
+            conn_gsheets.update(worksheet="Sheet1", data=df_lokal)
+            
+            st.sidebar.success("✅ Data Berhasil Terkirim ke Google Sheets!")
+            st.balloons()
+        else:
+            st.sidebar.warning("Data lokal masih kosong, tidak ada yang dikirim.")
+            
+    except Exception as e:
+        st.sidebar.error(f"Gagal kirim data: {e}")
+        st.sidebar.info("Pastikan link GSheets ada di Secrets dan aksesnya adalah 'Editor'.")
