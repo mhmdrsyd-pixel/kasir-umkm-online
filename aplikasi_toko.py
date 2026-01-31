@@ -8,11 +8,9 @@ conn = st.connection("gsheets", type=GSheetsConnection)
 
 # --- 2. LOGIN DATA ---
 USERS = {"owner": "admin123", "kasir": "kasir123"}
-
 if 'is_logged_in' not in st.session_state:
     st.session_state['is_logged_in'] = False
 
-# --- FUNGSI LOGIN ---
 if not st.session_state['is_logged_in']:
     st.title("🔒 Login POS")
     u = st.text_input("Username")
@@ -26,11 +24,10 @@ if not st.session_state['is_logged_in']:
     st.stop()
 
 # --- 3. MENU ---
-menu = st.sidebar.selectbox("Menu", ["Kasir", "Laporan"] if st.session_state['user_role'] == "kasir" else ["Kasir", "Laporan", "Belanja"])
+menu = st.sidebar.selectbox("Menu", ["Kasir", "Laporan", "Belanja"])
 
 if menu == "Kasir":
     st.title("🏪 Mesin Kasir")
-    # Contoh menu sederhana
     items = {"Siomay": 15000, "Batagor": 15000, "Es Teh": 5000}
     pilihan = st.selectbox("Menu", list(items.keys()))
     qty = st.number_input("Jumlah", 1, 100, 1)
@@ -46,17 +43,18 @@ if menu == "Kasir":
         }])
         
         try:
-            # Baca data (Gunakan try-except agar tidak error jika kolom belum ada)
+            # Baca data - jika error buat df kosong
             try:
                 df_existing = conn.read(worksheet="Sheet1", ttl=0)
             except:
                 df_existing = pd.DataFrame(columns=["Tanggal", "Keterangan", "Nominal", "Tipe"])
             
-            # Gabung & Update
+            # Gabung data
             df_final = pd.concat([df_existing, new_row], ignore_index=True)
             conn.update(worksheet="Sheet1", data=df_final)
             st.success("✅ Terjual & Tercatat!")
             st.balloons()
+            st.rerun()
         except Exception as e:
             st.error(f"Error: {e}")
 
@@ -64,14 +62,31 @@ elif menu == "Laporan":
     st.title("📈 Laporan Keuangan")
     try:
         df = conn.read(worksheet="Sheet1", ttl=0)
-        if not df.empty:
+        if df is not None and not df.empty:
             st.dataframe(df)
-            # Hitung aman dengan proteksi jika kolom 'Tipe' belum ada isinya
+            # PROTEKSI KEYERROR: Cek apakah kolom 'Tipe' ada
             if 'Tipe' in df.columns:
-                masuk = df[df['Tipe'] == 'MASUK']['Nominal'].sum()
-                keluar = df[df['Tipe'] == 'KELUAR']['Nominal'].sum()
+                masuk = pd.to_numeric(df[df['Tipe'] == 'MASUK']['Nominal']).sum()
+                keluar = pd.to_numeric(df[df['Tipe'] == 'KELUAR']['Nominal']).sum()
                 st.metric("Untung Bersih", f"Rp {masuk - keluar:,}")
+            else:
+                st.warning("Data ditemukan, tapi format kolom 'Tipe' belum sesuai.")
         else:
-            st.info("Belum ada data.")
-    except:
-        st.warning("Belum bisa membaca data. Silakan lakukan transaksi pertama.")
+            st.info("Belum ada data di Google Sheets.")
+    except Exception as e:
+        st.error(f"Gagal membaca laporan: {e}")
+
+elif menu == "Belanja":
+    st.title("💸 Catat Belanja")
+    with st.form("belanja_form"):
+        ket = st.text_input("Keterangan Belanja")
+        nom = st.number_input("Nominal (Rp)", 0)
+        if st.form_submit_button("Simpan"):
+            new_exp = pd.DataFrame([{"Tanggal": datetime.now().strftime("%Y-%m-%d"), "Keterangan": ket, "Nominal": nom, "Tipe": "KELUAR"}])
+            try:
+                df_old = conn.read(worksheet="Sheet1", ttl=0)
+                df_up = pd.concat([df_old, new_exp], ignore_index=True)
+                conn.update(worksheet="Sheet1", data=df_up)
+                st.success("Tersimpan!")
+            except:
+                st.error("Gagal simpan belanja.")
