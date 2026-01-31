@@ -145,6 +145,44 @@ def proses_pembayaran_promo(conn, metode_bayar, total_diskon_transaksi):
     except Exception as e:
         conn.rollback()
         return False, str(e)
+    # --- TEMPEL DI SINI (Di bawah fungsi proses_pembayaran_promo) ---
+def tampilkan_struk(data_keranjang, total_akhir, diskon, metode, kasir):
+    st.markdown("---")
+    st.markdown(f"""
+    <div style="background-color: #ffffff; padding: 20px; border: 2px dashed #1b5e20; border-radius: 10px; color: #1a1a1a; font-family: 'Courier New', Courier, monospace;">
+        <h3 style="text-align: center; color: #1b5e20; margin-bottom: 0;">SIOMAY KOKO</h3>
+        <p style="text-align: center; font-size: 12px; margin-top: 0;">Bandung, Jawa Barat</p>
+        <p style="font-size: 12px;">------------------------------------------</p>
+        <p style="font-size: 12px;">Tgl: {datetime.now().strftime('%d/%m/%Y %H:%M')}<br>Kasir: {kasir}</p>
+        <p style="font-size: 12px;">------------------------------------------</p>
+    """, unsafe_allow_html=True)
+    
+    for item in data_keranjang:
+        st.markdown(f"""
+        <div style="display: flex; justify-content: space-between; font-size: 13px;">
+            <span style="color:#1a1a1a !important;">{item['nama_barang']} (x{item['jumlah']})</span>
+            <span style="color:#1a1a1a !important;">Rp{item['subtotal']:,}</span>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    st.markdown(f"""
+        <p style="font-size: 12px;">------------------------------------------</p>
+        <div style="display: flex; justify-content: space-between; font-weight: bold; color:#1a1a1a !important;">
+            <span>TOTAL:</span>
+            <span>Rp{sum(i['subtotal'] for i in data_keranjang):,}</span>
+        </div>
+        <div style="display: flex; justify-content: space-between; color: red !important;">
+            <span>DISKON:</span>
+            <span>-Rp{diskon:,}</span>
+        </div>
+        <div style="display: flex; justify-content: space-between; font-size: 18px; color: #1b5e20 !important; font-weight: bold; margin-top: 10px;">
+            <span>TOTAL AKHIR:</span>
+            <span>Rp{total_akhir:,}</span>
+        </div>
+        <p style="font-size: 12px; margin-top: 10px; color:#1a1a1a !important;">Metode: {metode}</p>
+        <p style="text-align: center; font-style: italic; margin-top: 20px; color:#1a1a1a !important;">*** Terima Kasih & Selamat Menikmati ***</p>
+    </div>
+    """, unsafe_allow_html=True)
 
 # --- 4. TAMPILAN UI ---
 st.set_page_config(page_title="Sistem POS Pro Promo", layout="wide")
@@ -226,19 +264,26 @@ if menu == "🏪 Mesin Kasir":
             metode = st.selectbox("Metode Bayar", ["Cash", "QRIS", "Transfer"])
             
             if st.button("✅ PROSES PEMBAYARAN", type="primary"):
-                sukses, hasil = proses_pembayaran_promo(conn, metode, diskon_input)
+                # Simpan keranjang untuk struk sebelum direset
+                data_untuk_struk = st.session_state['keranjang'].copy()
+                metode_pilih = metode # Mengambil variabel dari selectbox metode bayar
+                
+                sukses, hasil = proses_pembayaran_promo(conn, metode_pilih, diskon_input)
+                
                 if sukses:
                     st.balloons()
+                    # Panggil fungsi struk yang kita buat tadi
+                    tampilkan_struk(data_untuk_struk, hasil, diskon_input, metode_pilih, st.session_state['username'])
+                    
+                    st.success(f"Transaksi Berhasil Disimpan!")
+                    # Kosongkan keranjang
                     st.session_state['keranjang'] = []
-                    st.success(f"Transaksi Sukses! Total Masuk: Rp{hasil:,}")
-                    st.rerun()
+                    
+                    # Tombol refresh manual untuk transaksi berikutnya
+                    if st.button("Selesai & Transaksi Baru"):
+                        st.rerun()
                 else:
                     st.error(f"Gagal: {hasil}")
-            
-            if st.button("Batal"):
-                st.session_state['keranjang'] = []
-                st.rerun()
-
 elif menu == "💸 Catat Belanja":
     st.title("Catat Belanja Bahan")
     with st.form("belanja"):
@@ -252,18 +297,75 @@ elif menu == "💸 Catat Belanja":
             st.success("Tersimpan!")
 
 elif menu == "📦 Stok Barang":
-    st.title("Kelola Stok")
-    with st.form("stok"):
-        nm = st.text_input("Nama")
-        stk = st.number_input("Stok", 1)
-        hrg = st.number_input("Harga Jual", 0)
-        if st.form_submit_button("Simpan"):
-            conn.execute("INSERT INTO produk (nama_barang, stok, harga_jual) VALUES (?,?,?)", (nm, stk, hrg))
-            conn.commit()
-            st.success("Barang ditambahkan!")
-            st.rerun()
-    st.dataframe(ambil_semua_barang(conn))
+    st.title("📦 Pengelolaan Stok & Produk")
+    
+    # 1. Ambil Data Terbaru
+    df_barang = ambil_semua_barang(conn)
 
+    # 2. Buat Tiga Tab agar Tidak Bingung
+    tab1, tab2, tab3 = st.tabs(["➕ Tambah Produk/Stok", "🔧 Edit & Koreksi", "🗑️ Hapus Barang"])
+
+    with tab1:
+        st.subheader("Pendaftaran & Update Stok")
+        col_tambah, col_update = st.columns(2)
+        
+        with col_tambah:
+            st.markdown("##### 🆕 Produk Baru")
+            with st.form("form_produk_baru"):
+                nm = st.text_input("Nama Barang")
+                stk_awal = st.number_input("Stok Awal", min_value=0, value=0)
+                hrg = st.number_input("Harga Jual (Rp)", min_value=0, step=500)
+                if st.form_submit_button("Daftarkan Produk"):
+                    if nm and nm not in df_barang['nama_barang'].values:
+                        conn.execute("INSERT INTO produk (nama_barang, stok, harga_jual) VALUES (?,?,?)", (nm, stk_awal, hrg))
+                        conn.commit()
+                        st.success(f"{nm} berhasil didaftarkan!")
+                        st.rerun()
+                    else:
+                        st.error("Nama sudah ada atau kosong!")
+
+        with col_update:
+            st.markdown("##### 📥 Stok Masuk")
+            if not df_barang.empty:
+                with st.form("form_stok_masuk"):
+                    pil_update = st.selectbox("Pilih Barang", df_barang['nama_barang'].tolist())
+                    jml_masuk = st.number_input("Jumlah Masuk", min_value=1)
+                    if st.form_submit_button("Update Stok"):
+                        stok_skrg = df_barang[df_barang['nama_barang'] == pil_update]['stok'].values[0]
+                        conn.execute("UPDATE produk SET stok = ? WHERE nama_barang = ?", (int(stok_skrg) + int(jml_masuk), pil_update))
+                        conn.commit()
+                        st.success("Stok berhasil diperbarui!")
+                        st.rerun()
+
+    with tab2:
+        st.subheader("🔧 Perbaiki Nama atau Harga")
+        if not df_barang.empty:
+            pil_edit = st.selectbox("Barang yang akan diedit:", df_barang['nama_barang'].tolist())
+            info_lama = df_barang[df_barang['nama_barang'] == pil_edit].iloc[0]
+            with st.form("form_koreksi"):
+                nama_baru = st.text_input("Ubah Nama", value=info_lama['nama_barang'])
+                harga_baru = st.number_input("Ubah Harga (Rp)", value=int(info_lama['harga_jual']))
+                stok_baru = st.number_input("Koreksi Stok (Angka Langsung)", value=int(info_lama['stok']))
+                if st.form_submit_button("Simpan Perubahan"):
+                    conn.execute("UPDATE produk SET nama_barang=?, harga_jual=?, stok=? WHERE id=?", (nama_baru, harga_baru, stok_baru, int(info_lama['id'])))
+                    conn.commit()
+                    st.success("Data diperbaiki!")
+                    st.rerun()
+
+    with tab3:
+        st.subheader("🗑️ Hapus Produk")
+        if not df_barang.empty:
+            pil_hapus = st.selectbox("Pilih barang untuk dihapus PERMANEN:", df_barang['nama_barang'].tolist())
+            st.warning(f"Apakah Anda yakin ingin menghapus {pil_hapus}?")
+            if st.button(f"HAPUS {pil_hapus}", type="secondary"):
+                conn.execute("DELETE FROM produk WHERE nama_barang = ?", (pil_hapus,))
+                conn.commit()
+                st.success(f"'{pil_hapus}' telah dihapus!")
+                st.rerun()
+
+    st.divider()
+    st.subheader("📊 Tabel Inventori")
+    st.dataframe(df_barang, use_container_width=True)
 elif menu == "📈 Laporan Lengkap":
     st.title("📊 Laporan Keuangan & Pengeluaran")
     
