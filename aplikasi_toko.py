@@ -2,7 +2,6 @@ import streamlit as st
 import pandas as pd
 import sqlite3
 from datetime import datetime
-
 # --- 1. DATA USER ---
 USERS = {
     "owner": "admin123", 
@@ -162,6 +161,14 @@ if not st.session_state['is_logged_in']:
 conn = init_db()
 
 # Sidebar
+# Tambahkan ini di bagian Sidebar
+# Menampilkan Logo di Sidebar dengan bingkai putih agar terlihat jelas
+st.sidebar.markdown('<div class="logo-container">', unsafe_allow_html=True)
+try:
+    st.sidebar.image("logo.png", use_container_width=True)
+except:
+    st.sidebar.markdown("<h2 style='color: #2e7d32; text-align: center;'>KOKO</h2>", unsafe_allow_html=True)
+st.sidebar.markdown('</div>', unsafe_allow_html=True)
 st.sidebar.title(f"User: {st.session_state['username']}")
 if st.sidebar.button("Logout"): logout()
 
